@@ -36,7 +36,7 @@ public:
     TObjectPtr<class UMotionControllerComponent> RightController;
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Pico Base Framework")
     TObjectPtr<class UCapsuleComponent> MovementCapsule;
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Pico Base Framework", meta=(ClampMin="0", Units="cm/s"))
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Pico Base Framework", meta=(ClampMin="0", ToolTip="Movement speed in centimeters per second."))
     float MoveSpeed = 300.0f;
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Pico Base Framework", meta=(ClampMin="0", Units="cm"))
     float DesktopEyeHeight = 165.0f;

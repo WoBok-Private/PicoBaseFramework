@@ -1,12 +1,9 @@
 #include "PicoBaseInput.h"
 #include "Modules/ModuleManager.h"
-#include "Features/IModularFeatures.h"
-#include "IMotionController.h"
 #include "InputAction.h"
 #include "InputMappingContext.h"
 #include "InputModifiers.h"
 #include "InputCoreTypes.h"
-#include "IOpenXRExtensionPlugin.h"
 #include "UObject/StrongObjectPtr.h"
 
 namespace
@@ -45,15 +42,17 @@ namespace
         GPicoInputContext->ContextDescription = FText::FromString(TEXT("Pico Base Framework Controls"));
         DesktopMove = MakeAction(TEXT("PicoDesktopMove"), EInputActionAccumulationBehavior::Cumulative);
         DesktopLook = MakeAction(TEXT("PicoDesktopLook"), EInputActionAccumulationBehavior::Cumulative);
-        VRMove = MakeAction(TEXT("PicoRightStickMove"), EInputActionAccumulationBehavior::TakeHighestAbsoluteValue);
+        VRMove = MakeAction(TEXT("PicoRightStickMove"), EInputActionAccumulationBehavior::Cumulative);
         MapAxis(DesktopMove, EKeys::W, true);
         MapAxis(DesktopMove, EKeys::S, true, true);
         MapAxis(DesktopMove, EKeys::D);
         MapAxis(DesktopMove, EKeys::A, false, true);
         MapAxis(DesktopLook, EKeys::MouseX);
         MapAxis(DesktopLook, EKeys::MouseY, true);
-        GPicoInputContext->MapKey(VRMove, FKey(TEXT("PICO_Right_Thumbstick_2D")));
-        GPicoInputContext->MapKey(VRMove, EKeys::OculusTouch_Right_Thumbstick_2D);
+        // PICOXR 3.2.3 emits separate analog axes instead of the UE 5.8 OpenXR key.
+        // Cumulative accumulation combines X and Y into a single diagonal vector.
+        MapAxis(VRMove, FKey(TEXT("PICOTouch_Right_Thumbstick_X")));
+        MapAxis(VRMove, FKey(TEXT("PICOTouch_Right_Thumbstick_Y")), true);
     }
 }
 
@@ -62,35 +61,11 @@ const UInputAction* PicoBaseInput::GetDesktopMove() { EnsureInputContext(); retu
 const UInputAction* PicoBaseInput::GetDesktopLook() { EnsureInputContext(); return DesktopLook; }
 const UInputAction* PicoBaseInput::GetVRMove() { EnsureInputContext(); return VRMove; }
 
-class FPicoBaseFrameworkModule : public IModuleInterface, public IOpenXRExtensionPlugin
+class FPicoBaseFrameworkModule : public IModuleInterface
 {
 public:
-    virtual void StartupModule() override
-    {
-        RegisterOpenXRExtensionModularFeature();
-    }
-
-    virtual FString GetDisplayName() override { return TEXT("PicoBaseFramework"); }
-
-    virtual const void* OnCreateSession(XrInstance InInstance, XrSystemId InSystem, const void* InNext) override
-    {
-        // Register once for each new session, before OpenXR builds its action sets.
-        // Session destruction clears the engine's context map, so register again on recreation.
-        TSet<TObjectPtr<UInputMappingContext>> Contexts;
-        Contexts.Add(PicoBaseInput::GetContext());
-        for (IMotionController* Device : IModularFeatures::Get().GetModularFeatureImplementations<IMotionController>(IMotionController::GetModularFeatureName()))
-        {
-            if (Device->GetMotionControllerDeviceTypeName() == FName(TEXT("OpenXR")))
-            {
-                Device->AttachInputMappingContexts(Contexts);
-            }
-        }
-        return InNext;
-    }
-
     virtual void ShutdownModule() override
     {
-        UnregisterOpenXRExtensionModularFeature();
         GPicoInputContext.Reset();
         DesktopMove = DesktopLook = VRMove = nullptr;
     }

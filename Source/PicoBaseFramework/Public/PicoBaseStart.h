@@ -12,7 +12,7 @@ class PICOBASEFRAMEWORK_API APicoBaseStart : public AActor
 public:
     APicoBaseStart();
 
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Pico Base Framework", meta=(ClampMin="0", Units="cm/s"))
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Pico Base Framework", meta=(ClampMin="0", ToolTip="Movement speed in centimeters per second."))
     float MoveSpeed = 300.0f;
 
     /** Only for desktop preview; never added to tracked VR eye height. */

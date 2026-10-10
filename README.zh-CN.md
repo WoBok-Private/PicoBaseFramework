@@ -2,15 +2,16 @@
 
 **中文** | [English](README.md)
 
-面向 Unreal Engine 5.8 的通用 PICO VR 玩家基础框架，提供 PicoBaseGameMode、PicoBasePawn、PicoBasePlayerController 和 PicoBaseStart，支持桌面操作、头部与手柄追踪，以及水平移动。
+面向 Unreal Engine 5.4.4 的通用 PICO VR 玩家基础框架，提供 PicoBaseGameMode、PicoBasePawn、PicoBasePlayerController 和 PicoBaseStart，支持桌面操作、头部与手柄追踪，以及水平移动。
 
 ## 安装与场景配置
 
-1. 将 PicoBaseFramework 文件夹放入项目的 Plugins 目录，启用插件并编译 C++ 工程。
-2. 在 World Settings 中，将 GameMode Override 设置为 **PicoBaseGameMode**。
-3. 在 Place Actors 中搜索 **PicoBaseStart**，将其原点放在地面上，箭头指向初始视线方向。
+1. 在项目中安装 PICOXR 3.2.3，并启用 PICOXR、XRBase 和 EnhancedInput。
+2. 将 PicoBaseFramework 文件夹放入项目的 Plugins 目录，启用插件并编译 C++ 工程。
+3. 在 World Settings 中，将 GameMode Override 设置为 **PicoBaseGameMode**。
+4. 在 Place Actors 中搜索 **PicoBaseStart**，将其原点放在地面上，箭头指向初始视线方向。
 
-PicoBaseGameMode 会创建并控制 PicoBasePawn。插件按需创建 Enhanced Input 输入映射，并在 OpenXR 会话创建时注册。
+PicoBaseGameMode 会创建并控制 PicoBasePawn。插件按需创建 Enhanced Input 输入映射，在 Pawn 初始化输入时加入本地玩家。框架使用 PICOXR 的 PICOTouch_Right_Thumbstick_X/Y 模拟轴，不依赖 OpenXR。
 
 ## PicoBaseStart 设置
 
@@ -67,8 +68,10 @@ PicoBasePawn 的 **Pico Base Framework** 分组中也提供 **Enable Collision**
 
 ## 项目集成
 
-主要配置为 **UE 5.8 + OpenXR + PICOController**，PICO 原生应用使用 Android ARM64。项目负责 Android SDK、签名、渲染和 XR 运行时配置；插件负责玩家控制、追踪和输入。
+主要配置为 **UE 5.4.4 + PICOXR 3.2.3 + Enhanced Input**，PICO 原生应用使用 Android ARM64。项目负责 Android SDK、签名、渲染和 XR 运行时配置；插件负责玩家控制、追踪和输入。
 
-桌面模式用于 Windows 编辑器 Play 和 Windows 应用；VR 模式在有效 XR 会话中启用。其他 PICO SDK 或串流运行时的兼容性，应在目标设备上确认。
+桌面模式用于 Windows 编辑器 Play 和 Windows 应用；VR 模式在有效 XR 会话中启用。右摇杆映射针对 PICOXR 3.2.3，其他 SDK 或 OpenXR 串流需要另行接入输入。
 
 源码插件需要 C++ 构建环境，更换引擎版本后应重新编译。
+
+可通过 Pawn、PlayerController 和 GameMode 子蓝图扩展功能。C++ 使用这些类时，在自身模块依赖中加入 PicoBaseFramework。控制器组件提供追踪位置和旋转，手柄模型与交互逻辑可在 Pawn 子蓝图中添加。

@@ -2,15 +2,16 @@
 
 **English** | [中文](README.zh-CN.md)
 
-A reusable PICO VR player framework for Unreal Engine 5.8. It provides PicoBaseGameMode, PicoBasePawn, PicoBasePlayerController and PicoBaseStart, with desktop controls, headset/controller tracking and horizontal locomotion.
+A reusable PICO VR player framework for Unreal Engine 5.4.4. It provides PicoBaseGameMode, PicoBasePawn, PicoBasePlayerController and PicoBaseStart, with desktop controls, headset/controller tracking and horizontal locomotion.
 
 ## Installation and scene setup
 
-1. Copy the PicoBaseFramework folder into the project's Plugins directory, enable the plugin and compile the C++ project.
-2. In World Settings, set GameMode Override to **PicoBaseGameMode**.
-3. In Place Actors, search for **PicoBaseStart** and place its origin on the floor. Point its arrow in the initial viewing direction.
+1. Install PICOXR 3.2.3 in the project and enable PICOXR, XRBase and EnhancedInput.
+2. Copy the PicoBaseFramework folder into the project's Plugins directory, enable the plugin and compile the C++ project.
+3. In World Settings, set GameMode Override to **PicoBaseGameMode**.
+4. In Place Actors, search for **PicoBaseStart** and place its origin on the floor. Point its arrow in the initial viewing direction.
 
-PicoBaseGameMode creates and possesses PicoBasePawn. The plugin creates its Enhanced Input mappings on demand and registers them when an OpenXR session is created.
+PicoBaseGameMode creates and possesses PicoBasePawn. The plugin creates its Enhanced Input mappings on demand and adds them to the local player when the pawn input is initialized. The framework uses PICOXR analog keys PICOTouch_Right_Thumbstick_X/Y and does not require OpenXR.
 
 ## PicoBaseStart settings
 
@@ -67,8 +68,10 @@ Calibrate the real floor and play area in the headset system. PicoBaseStart defi
 
 ## Project integration
 
-The main configuration is **UE 5.8 + OpenXR + PICOController**, with Android ARM64 for native PICO applications. Projects configure Android SDK, signing, rendering and the XR runtime; the plugin handles player control, tracking and input.
+The main configuration is **UE 5.4.4 + PICOXR 3.2.3 + Enhanced Input**, with Android ARM64 for native PICO applications. Projects configure Android SDK, signing, rendering and the XR runtime; the plugin handles player control, tracking and input.
 
-Desktop mode supports Windows editor Play and Windows applications. VR mode is activated in a valid XR session. Confirm compatibility of other PICO SDKs and streaming runtimes on the target device.
+Desktop mode supports Windows editor Play and Windows applications. VR mode is activated in a valid XR session. The right-stick mappings target PICOXR 3.2.3. Other SDKs or OpenXR streaming require their own input integration.
 
 Source plugins require a C++ build environment and should be rebuilt when changing engine versions.
+
+Blueprint subclasses can extend the Pawn, PlayerController and GameMode. Add PicoBaseFramework to your module dependencies when using these classes from C++. Controller components provide tracked transforms; controller meshes and interaction behavior can be added in a Pawn Blueprint.

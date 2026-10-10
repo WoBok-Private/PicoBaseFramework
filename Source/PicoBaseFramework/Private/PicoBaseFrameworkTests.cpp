@@ -14,10 +14,8 @@
 #include "Components/BoxComponent.h"
 #include "Components/CapsuleComponent.h"
 #include "Engine/World.h"
-#include "XRMotionControllerBase.h"
-#include "IOpenXRExtensionPlugin.h"
-#include "EnhancedInputDeveloperSettings.h"
-
+#include "Engine/EngineBaseTypes.h"
+#include "Engine/Engine.h"
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FPicoBaseFrameworkSpawnMovementTest, "PicoBaseFramework.SpawnAndHorizontalMovement",
     EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
 
@@ -26,7 +24,12 @@ bool FPicoBaseFrameworkSpawnMovementTest::RunTest(const FString&)
     UWorld::InitializationValues IV;
     IV.AllowAudioPlayback(false).CreatePhysicsScene(false).CreateNavigation(false).CreateAISystem(false).ShouldSimulatePhysics(false);
     UWorld* World = UWorld::CreateWorld(EWorldType::Game, false, NAME_None, nullptr, true, ERHIFeatureLevel::SM5, &IV);
-    ON_SCOPE_EXIT { World->DestroyWorld(false); };
+    GEngine->CreateNewWorldContext(EWorldType::Game).SetCurrentWorld(World);
+    ON_SCOPE_EXIT
+    {
+        World->DestroyWorld(false);
+        GEngine->DestroyWorldContext(World);
+    };
     APicoBaseStart* Start = World->SpawnActor<APicoBaseStart>();
     Start->SetActorLocation(FVector(100, 200, -40));
     Start->SetActorRotation(FRotator(30, 90, 20));
@@ -34,6 +37,8 @@ bool FPicoBaseFrameworkSpawnMovementTest::RunTest(const FString&)
     Start->MoveSpeed = 200;
     Start->DesktopEyeHeight = 172;
     APicoBaseGameMode* Mode = World->SpawnActor<APicoBaseGameMode>();
+    // UE 5.4 dispatches actor BlueprintNativeEvents only after world actors initialize.
+    World->InitializeActorsForPlay(FURL());
     TestTrue(TEXT("Floor actor selected without a PlayerStart"), Mode->ChoosePlayerStart(nullptr) == Start);
     APicoBasePawn* Pawn = Cast<APicoBasePawn>(Mode->SpawnDefaultPawnAtTransform(nullptr, FTransform(FVector(900, 900, 900))));
     if (!TestNotNull(TEXT("Pawn spawned"), Pawn)) { return false; }
@@ -146,18 +151,25 @@ bool FPicoBaseInputTest::RunTest(const FString&)
         }
     }
     TestTrue(TEXT("Opposing keys cancel"), Combined.IsNearlyZero());
-    bool bPicoStick = false;
-    bool bStreamingStick = false;
+    bool bPicoX = false;
+    bool bPicoY = false;
+    FVector2D Stick = FVector2D::ZeroVector;
     for (const FEnhancedActionKeyMapping& Mapping : Context->GetMappings())
     {
-        if (Mapping.Action == PicoBaseInput::GetVRMove())
+        if (Mapping.Action != PicoBaseInput::GetVRMove()) { continue; }
+        bPicoX |= Mapping.Key == FKey(TEXT("PICOTouch_Right_Thumbstick_X"));
+        bPicoY |= Mapping.Key == FKey(TEXT("PICOTouch_Right_Thumbstick_Y"));
+        TestTrue(TEXT("PICO analog key is registered by the installed SDK"), Mapping.Key.IsValid());
+        FInputActionValue Value(FVector2D(0.5f, 0));
+        for (UInputModifier* Modifier : Mapping.Modifiers)
         {
-            bPicoStick |= Mapping.Key == FKey(TEXT("PICO_Right_Thumbstick_2D"));
-            bStreamingStick |= Mapping.Key == EKeys::OculusTouch_Right_Thumbstick_2D;
+            Value = Modifier->ModifyRaw(PlayerInput, Value, 1.0f / 60.0f);
         }
+        Stick += Value.Get<FVector2D>();
     }
-    TestTrue(TEXT("PICO right stick bound"), bPicoStick);
-    TestTrue(TEXT("OpenXR Touch profile right stick bound"), bStreamingStick);
+    TestTrue(TEXT("PICO right stick X and Y are bound"), bPicoX && bPicoY);
+    TestTrue(TEXT("Both stick axes preserve analog diagonal input"), Stick.Equals(FVector2D(0.5f, 0.5f)));
+    TestTrue(TEXT("Stick axes accumulate together"), PicoBaseInput::GetVRMove()->AccumulationBehavior == EInputActionAccumulationBehavior::Cumulative);
     return true;
 }
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FPicoBaseCollisionTest, "PicoBaseFramework.OptionalMovementCollision",
@@ -203,69 +215,6 @@ bool FPicoBaseCollisionTest::RunTest(const FString&)
     Pawn->SetMovementCollisionEnabled(false);
     Pawn->MoveHorizontally(FVector(200, 0, 0));
     TestTrue(TEXT("Collision can be turned off again"), Pawn->GetActorLocation().X > 200);
-    return true;
-}
-namespace
-{
-    class FSessionInputDevice : public FXRMotionControllerBase
-    {
-    public:
-        FName DeviceName;
-        int32 AttachCount = 0;
-        bool bSessionActive = false;
-        bool bAttachedExpectedContext = false;
-        explicit FSessionInputDevice(FName InName) : DeviceName(InName) {}
-        virtual FName GetMotionControllerDeviceTypeName() const override { return DeviceName; }
-        virtual bool GetControllerOrientationAndPosition(int32, FName, FRotator&, FVector&, float) const override { return false; }
-        virtual ETrackingStatus GetControllerTrackingStatus(int32, FName) const override { return ETrackingStatus::NotTracked; }
-        virtual bool AttachInputMappingContexts(const TSet<TObjectPtr<UInputMappingContext>>& Contexts) override
-        {
-            ++AttachCount;
-            bAttachedExpectedContext = !bSessionActive && Contexts.Num() == 1 && Contexts.Contains(PicoBaseInput::GetContext());
-            return !bSessionActive;
-        }
-    };
-}
-
-IMPLEMENT_SIMPLE_AUTOMATION_TEST(FPicoBaseSessionInputTest, "PicoBaseFramework.SessionInputRegistration",
-    EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
-
-bool FPicoBaseSessionInputTest::RunTest(const FString&)
-{
-    IOpenXRExtensionPlugin* Extension = nullptr;
-    for (IOpenXRExtensionPlugin* Candidate : IModularFeatures::Get().GetModularFeatureImplementations<IOpenXRExtensionPlugin>(IOpenXRExtensionPlugin::GetModularFeatureName()))
-    {
-        if (Candidate->GetDisplayName() == TEXT("PicoBaseFramework")) { Extension = Candidate; break; }
-    }
-    if (!TestNotNull(TEXT("PICO session extension is registered"), Extension)) { return false; }
-    FSessionInputDevice OpenXR(TEXT("OpenXR"));
-    FSessionInputDevice Other(TEXT("OtherController"));
-    IModularFeatures::Get().RegisterModularFeature(IMotionController::GetModularFeatureName(), &OpenXR);
-    IModularFeatures::Get().RegisterModularFeature(IMotionController::GetModularFeatureName(), &Other);
-    ON_SCOPE_EXIT
-    {
-        IModularFeatures::Get().UnregisterModularFeature(IMotionController::GetModularFeatureName(), &OpenXR);
-        IModularFeatures::Get().UnregisterModularFeature(IMotionController::GetModularFeatureName(), &Other);
-    };
-    TestEqual(TEXT("Device registration does not attach mappings prematurely"), OpenXR.AttachCount, 0);
-    Extension->OnCreateSession(XR_NULL_HANDLE, XR_NULL_SYSTEM_ID, nullptr);
-    TestEqual(TEXT("First session attaches mappings once"), OpenXR.AttachCount, 1);
-    TestTrue(TEXT("PICO mappings attach before actions become active"), OpenXR.bAttachedExpectedContext);
-    OpenXR.bSessionActive = true;
-    UWorld::InitializationValues IV;
-    IV.AllowAudioPlayback(false).CreatePhysicsScene(false).CreateNavigation(false).CreateAISystem(false).ShouldSimulatePhysics(false);
-    UWorld* World = UWorld::CreateWorld(EWorldType::Game, false, NAME_None, nullptr, true, ERHIFeatureLevel::SM5, &IV);
-    World->DestroyWorld(false);
-    TestEqual(TEXT("Opening a world does not reattach active session mappings"), OpenXR.AttachCount, 1);
-    Extension->OnDestroySession(XR_NULL_HANDLE);
-    OpenXR.bSessionActive = false;
-    Extension->OnCreateSession(XR_NULL_HANDLE, XR_NULL_SYSTEM_ID, nullptr);
-    TestEqual(TEXT("A recreated session reattaches mappings once"), OpenXR.AttachCount, 2);
-    TestTrue(TEXT("Recreated session receives the plugin context"), OpenXR.bAttachedExpectedContext);
-    TestEqual(TEXT("Other input devices are untouched"), Other.AttachCount, 0);
-    const bool bInGlobalDefaults = GetDefault<UEnhancedInputDeveloperSettings>()->DefaultMappingContexts.ContainsByPredicate(
-        [](const FDefaultContextSetting& Entry) { return Entry.InputMappingContext.Get() == PicoBaseInput::GetContext(); });
-    TestFalse(TEXT("Plugin does not mutate global default mapping contexts"), bInGlobalDefaults);
     return true;
 }
 #endif
