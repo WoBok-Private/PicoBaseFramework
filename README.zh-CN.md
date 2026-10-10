@@ -12,14 +12,6 @@
 
 PicoBaseGameMode 会创建并控制 PicoBasePawn。插件在运行时创建 Enhanced Input 输入映射。
 
-## 编辑器中的名称
-
-类的显示名称为 **PicoBaseStart**、**PicoBasePawn**、**PicoBaseGameMode** 和 **PicoBasePlayerController**，本文使用相同名称。
-
-Place Actors 显示类的显示名称。Outliner 的 **Type** 列表示类，**Label** 列表示可编辑的场景实例名称。新建 PicoBaseStart 通常使用 PicoBaseStart 作为实例标签，多个实例可能带数字后缀。已有或手动修改的实例标签会保留。
-
-插件属性分组为 **Pico Base Framework**。
-
 ## PicoBaseStart 设置
 
 | 属性 | 默认值 | 作用 |
@@ -77,5 +69,4 @@ PicoBasePawn 的 **Pico Base Framework** 分组中也提供 **Enable Collision**
 
 桌面模式用于 Windows 编辑器 Play 和 Windows 应用；VR 模式在有效 XR 会话中启用。其他 PICO SDK 或串流运行时的兼容性，应在目标设备上确认。
 
-源码插件需要 C++ 构建环境，更换引擎版本后应重新编译。此前 PicoUniversal 类名的序列化引用会重定向到 PicoBaseFramework 对应类。
-
+源码插件需要 C++ 构建环境，更换引擎版本后应重新编译。

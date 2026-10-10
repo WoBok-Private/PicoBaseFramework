@@ -13,7 +13,6 @@
 #include "Components/BoxComponent.h"
 #include "Components/CapsuleComponent.h"
 #include "Engine/World.h"
-#include "UObject/SoftObjectPath.h"
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FPicoBaseFrameworkSpawnMovementTest, "PicoBaseFramework.SpawnAndHorizontalMovement",
     EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
@@ -81,15 +80,6 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(FPicoBaseInputTest, "PicoBaseFramework.Portable
 
 bool FPicoBaseInputTest::RunTest(const FString&)
 {
-    // Serialized class references apply CoreRedirects; raw LoadClass strings do not.
-    FSoftClassPath LegacyStart(TEXT("/Script/PicoUniversal.PicoUniversalStart"));
-    FSoftClassPath LegacyMode(TEXT("/Script/PicoUniversal.PicoUniversalGameMode"));
-    LegacyStart.FixupCoreRedirects();
-    LegacyMode.FixupCoreRedirects();
-    TestTrue(TEXT("Previously saved floor actor references resolve after the rename"),
-        LegacyStart.TryLoadClass<AActor>() == APicoBaseStart::StaticClass());
-    TestTrue(TEXT("Previously saved GameMode references resolve after the rename"),
-        LegacyMode.TryLoadClass<AGameModeBase>() == APicoBaseGameMode::StaticClass());
     const UInputMappingContext* Context = PicoBaseInput::GetContext();
     if (!TestNotNull(TEXT("Native mapping context exists"), Context)) { return false; }
     UEnhancedPlayerInput* PlayerInput = NewObject<UEnhancedPlayerInput>();

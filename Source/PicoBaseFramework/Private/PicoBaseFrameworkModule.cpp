@@ -9,7 +9,6 @@
 #include "EnhancedInputDeveloperSettings.h"
 #include "Engine/World.h"
 #include "UObject/StrongObjectPtr.h"
-#include "UObject/CoreRedirects.h"
 
 namespace
 {
@@ -63,15 +62,6 @@ class FPicoBaseFrameworkModule : public IModuleInterface
 public:
     virtual void StartupModule() override
     {
-        // Preserve references in levels/Blueprints saved with the initial plugin name.
-        const FCoreRedirect Redirects[] = {
-            FCoreRedirect(ECoreRedirectFlags::Type_Package, TEXT("/Script/PicoUniversal"), TEXT("/Script/PicoBaseFramework")),
-            FCoreRedirect(ECoreRedirectFlags::Type_Class, TEXT("PicoUniversalGameMode"), TEXT("/Script/PicoBaseFramework.PicoBaseGameMode")),
-            FCoreRedirect(ECoreRedirectFlags::Type_Class, TEXT("PicoUniversalPawn"), TEXT("/Script/PicoBaseFramework.PicoBasePawn")),
-            FCoreRedirect(ECoreRedirectFlags::Type_Class, TEXT("PicoUniversalStart"), TEXT("/Script/PicoBaseFramework.PicoBaseStart")),
-            FCoreRedirect(ECoreRedirectFlags::Type_Class, TEXT("PicoUniversalPlayerController"), TEXT("/Script/PicoBaseFramework.PicoBasePlayerController"))
-        };
-        FCoreRedirects::AddRedirectList(Redirects, TEXT("PicoBaseFrameworkRename"));
         // Create and register the plugin's native Enhanced Input mappings.
         GPicoInputContext.Reset(NewObject<UInputMappingContext>(GetTransientPackage(), TEXT("PicoBaseFrameworkControls")));
         GPicoInputContext->ContextDescription = FText::FromString(TEXT("Pico Base Framework Controls"));

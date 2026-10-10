@@ -12,14 +12,6 @@ A reusable PICO VR player framework for Unreal Engine 5.8. It provides PicoBaseG
 
 PicoBaseGameMode creates and possesses PicoBasePawn. The plugin creates its Enhanced Input mappings at runtime.
 
-## Names in the editor
-
-The class display names are **PicoBaseStart**, **PicoBasePawn**, **PicoBaseGameMode** and **PicoBasePlayerController**. These names are also used throughout this document.
-
-Place Actors shows the class display name. The Outliner **Type** column identifies the class, while its **Label** column is the editable name of a particular instance. A new PicoBaseStart normally receives a PicoBaseStart label; additional instances may receive a numeric suffix. Existing or manually renamed instance labels are preserved.
-
-Plugin properties are grouped under **Pico Base Framework**.
-
 ## PicoBaseStart settings
 
 | Property | Default | Behavior |
@@ -77,5 +69,4 @@ The main configuration is **UE 5.8 + OpenXR + PICOController**, with Android ARM
 
 Desktop mode supports Windows editor Play and Windows applications. VR mode is activated in a valid XR session. Confirm compatibility of other PICO SDKs and streaming runtimes on the target device.
 
-Source plugins require a C++ build environment and should be rebuilt when changing engine versions. Serialized references from the earlier PicoUniversal class names are redirected to the PicoBaseFramework classes.
-
+Source plugins require a C++ build environment and should be rebuilt when changing engine versions.
