@@ -10,7 +10,7 @@
 2. 在 World Settings 中，将 GameMode Override 设置为 **PicoBaseGameMode**。
 3. 在 Place Actors 中搜索 **PicoBaseStart**，将其原点放在地面上，箭头指向初始视线方向。
 
-PicoBaseGameMode 会创建并控制 PicoBasePawn。插件在运行时创建 Enhanced Input 输入映射。
+PicoBaseGameMode 会创建并控制 PicoBasePawn。插件按需创建 Enhanced Input 输入映射，并在 OpenXR 会话创建时注册。
 
 ## PicoBaseStart 设置
 
@@ -23,6 +23,8 @@ PicoBaseGameMode 会创建并控制 PicoBasePawn。插件在运行时创建 Enha
 | Priority | 0 | 存在多个 PicoBaseStart 时，数值较高者优先。 |
 
 PicoBasePawn 的 **Pico Base Framework** 分组中也提供 **Enable Collision**。使用 PicoBaseStart 出生时，会将起点设置复制到玩家 Pawn；没有 PicoBaseStart 时，使用 Pawn 的类默认值。
+
+在蓝图或编辑器 Details 面板修改开关时立即生效。C++ 使用 **SetMovementCollisionEnabled** 修改，通过 **IsMovementCollisionEnabled** 读取当前状态。
 
 ## 出生位置与地面高度
 

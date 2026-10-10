@@ -15,7 +15,16 @@ public:
     virtual void Tick(float DeltaSeconds) override;
     virtual void SetupPlayerInputComponent(UInputComponent* PlayerInputComponent) override;
     virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
+    #if WITH_EDITOR
+    virtual void PostEditChangeProperty(FPropertyChangedEvent& PropertyChangedEvent) override;
+    #endif
     void ConfigureFromStart(const class APicoBaseStart* Start);
+
+    UFUNCTION(BlueprintCallable, Category="Pico Base Framework")
+    void SetMovementCollisionEnabled(bool bEnabled);
+
+    UFUNCTION(BlueprintPure, Category="Pico Base Framework")
+    bool IsMovementCollisionEnabled() const { return bEnableCollision; }
 
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Pico Base Framework")
     TObjectPtr<USceneComponent> TrackingOrigin;
@@ -36,10 +45,6 @@ public:
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Pico Base Framework", meta=(ClampMin="0"))
     float MouseSensitivity = 1.0f;
 
-    /** Block virtual locomotion; physical headset tracking remains independent. */
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Pico Base Framework", meta=(DisplayName="Enable Collision"))
-    bool bEnableCollision = false;
-
 private:
     friend class FPicoBaseFrameworkSpawnMovementTest;
     friend class FPicoBaseCollisionTest;
@@ -50,7 +55,7 @@ private:
     void VRMoveInput(const FInputActionValue& Value);
     void UpdateViewMode(bool bVR);
     bool IsVRActive() const;
-    void UpdateFloorTracking(float DeltaSeconds);
+    void UpdateFloorTracking(float DeltaSeconds, bool bHasValidPosition);
     UFUNCTION()
     void RecenterTracking();
 
@@ -58,6 +63,10 @@ private:
     TObjectPtr<class UVRNotificationsComponent> Notifications;
     UPROPERTY(Transient)
     TObjectPtr<class UEnhancedInputLocalPlayerSubsystem> InputSubsystem;
+    /** Block virtual locomotion; physical headset tracking remains independent. */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, BlueprintSetter=SetMovementCollisionEnabled, Category="Pico Base Framework", meta=(DisplayName="Enable Collision", AllowPrivateAccess="true"))
+    bool bEnableCollision = false;
+    bool bAppliedCollisionEnabled = false;
     FVector2D DesktopInput = FVector2D::ZeroVector;
     FVector2D RightStickInput = FVector2D::ZeroVector;
     bool bVRMode = false;

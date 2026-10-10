@@ -10,7 +10,7 @@ A reusable PICO VR player framework for Unreal Engine 5.8. It provides PicoBaseG
 2. In World Settings, set GameMode Override to **PicoBaseGameMode**.
 3. In Place Actors, search for **PicoBaseStart** and place its origin on the floor. Point its arrow in the initial viewing direction.
 
-PicoBaseGameMode creates and possesses PicoBasePawn. The plugin creates its Enhanced Input mappings at runtime.
+PicoBaseGameMode creates and possesses PicoBasePawn. The plugin creates its Enhanced Input mappings on demand and registers them when an OpenXR session is created.
 
 ## PicoBaseStart settings
 
@@ -23,6 +23,8 @@ PicoBaseGameMode creates and possesses PicoBasePawn. The plugin creates its Enha
 | Priority | 0 | Higher values take precedence when multiple PicoBaseStart instances exist. |
 
 PicoBasePawn also exposes **Enable Collision** under **Pico Base Framework**. When PicoBaseStart is selected for spawning, its setting is copied to the spawned pawn. Without PicoBaseStart, the pawn uses its class defaults.
+
+The switch takes effect immediately when changed in Blueprint or in the editor's Details panel. C++ callers use **SetMovementCollisionEnabled**; **IsMovementCollisionEnabled** reads the current state.
 
 ## Spawn location and floor height
 

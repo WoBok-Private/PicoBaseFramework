@@ -6,8 +6,7 @@
 #include "InputMappingContext.h"
 #include "InputModifiers.h"
 #include "InputCoreTypes.h"
-#include "EnhancedInputDeveloperSettings.h"
-#include "Engine/World.h"
+#include "IOpenXRExtensionPlugin.h"
 #include "UObject/StrongObjectPtr.h"
 
 namespace
@@ -39,30 +38,9 @@ namespace
         }
     }
 
-    void AttachToControllers()
+    void EnsureInputContext()
     {
-        TSet<TObjectPtr<UInputMappingContext>> Contexts;
-        Contexts.Add(GPicoInputContext.Get());
-        for (IMotionController* Device : IModularFeatures::Get().GetModularFeatureImplementations<IMotionController>(IMotionController::GetModularFeatureName()))
-        {
-            Device->AttachInputMappingContexts(Contexts);
-        }
-    }
-}
-
-UInputMappingContext* PicoBaseInput::GetContext() { return GPicoInputContext.Get(); }
-const UInputAction* PicoBaseInput::GetDesktopMove() { return DesktopMove; }
-const UInputAction* PicoBaseInput::GetDesktopLook() { return DesktopLook; }
-const UInputAction* PicoBaseInput::GetVRMove() { return VRMove; }
-
-class FPicoBaseFrameworkModule : public IModuleInterface
-{
-    FDelegateHandle FeatureHandle;
-    FDelegateHandle WorldHandle;
-public:
-    virtual void StartupModule() override
-    {
-        // Create and register the plugin's native Enhanced Input mappings.
+        if (GPicoInputContext.IsValid()) { return; }
         GPicoInputContext.Reset(NewObject<UInputMappingContext>(GetTransientPackage(), TEXT("PicoBaseFrameworkControls")));
         GPicoInputContext->ContextDescription = FText::FromString(TEXT("Pico Base Framework Controls"));
         DesktopMove = MakeAction(TEXT("PicoDesktopMove"), EInputActionAccumulationBehavior::Cumulative);
@@ -76,41 +54,43 @@ public:
         MapAxis(DesktopLook, EKeys::MouseY, true);
         GPicoInputContext->MapKey(VRMove, FKey(TEXT("PICO_Right_Thumbstick_2D")));
         GPicoInputContext->MapKey(VRMove, EKeys::OculusTouch_Right_Thumbstick_2D);
-        GPicoInputContext->MapKey(VRMove, EKeys::Gamepad_Right2D);
+    }
+}
 
-        // OpenXR needs mappings before session creation, not just when the pawn binds input.
-        FDefaultContextSetting Setting;
-        Setting.InputMappingContext = GPicoInputContext.Get();
-        Setting.bAddImmediately = false;
-        GetMutableDefault<UEnhancedInputDeveloperSettings>()->DefaultMappingContexts.Add(Setting);
-        FeatureHandle = IModularFeatures::Get().OnModularFeatureRegistered().AddLambda(
-            [](const FName& Name, IModularFeature* Feature)
+UInputMappingContext* PicoBaseInput::GetContext() { EnsureInputContext(); return GPicoInputContext.Get(); }
+const UInputAction* PicoBaseInput::GetDesktopMove() { EnsureInputContext(); return DesktopMove; }
+const UInputAction* PicoBaseInput::GetDesktopLook() { EnsureInputContext(); return DesktopLook; }
+const UInputAction* PicoBaseInput::GetVRMove() { EnsureInputContext(); return VRMove; }
+
+class FPicoBaseFrameworkModule : public IModuleInterface, public IOpenXRExtensionPlugin
+{
+public:
+    virtual void StartupModule() override
+    {
+        RegisterOpenXRExtensionModularFeature();
+    }
+
+    virtual FString GetDisplayName() override { return TEXT("PicoBaseFramework"); }
+
+    virtual const void* OnCreateSession(XrInstance InInstance, XrSystemId InSystem, const void* InNext) override
+    {
+        // Register once for each new session, before OpenXR builds its action sets.
+        // Session destruction clears the engine's context map, so register again on recreation.
+        TSet<TObjectPtr<UInputMappingContext>> Contexts;
+        Contexts.Add(PicoBaseInput::GetContext());
+        for (IMotionController* Device : IModularFeatures::Get().GetModularFeatureImplementations<IMotionController>(IMotionController::GetModularFeatureName()))
+        {
+            if (Device->GetMotionControllerDeviceTypeName() == FName(TEXT("OpenXR")))
             {
-                if (Name == IMotionController::GetModularFeatureName())
-                {
-                    TSet<TObjectPtr<UInputMappingContext>> Contexts;
-                    Contexts.Add(GPicoInputContext.Get());
-                    static_cast<IMotionController*>(Feature)->AttachInputMappingContexts(Contexts);
-                }
-            });
-        // OpenXR discards attached contexts on session shutdown. Register again for the next world.
-        WorldHandle = FWorldDelegates::OnPostWorldInitialization.AddLambda(
-            [](UWorld* World, const UWorld::InitializationValues)
-            {
-                if (World->IsGameWorld()) { AttachToControllers(); }
-            });
-        AttachToControllers();
+                Device->AttachInputMappingContexts(Contexts);
+            }
+        }
+        return InNext;
     }
 
     virtual void ShutdownModule() override
     {
-        IModularFeatures::Get().OnModularFeatureRegistered().Remove(FeatureHandle);
-        FWorldDelegates::OnPostWorldInitialization.Remove(WorldHandle);
-        if (UObjectInitialized())
-        {
-            GetMutableDefault<UEnhancedInputDeveloperSettings>()->DefaultMappingContexts.RemoveAll(
-                [](const FDefaultContextSetting& Entry) { return Entry.InputMappingContext.Get() == GPicoInputContext.Get(); });
-        }
+        UnregisterOpenXRExtensionModularFeature();
         GPicoInputContext.Reset();
         DesktopMove = DesktopLook = VRMove = nullptr;
     }

@@ -10,9 +10,13 @@
 #include "InputModifiers.h"
 #include "EnhancedPlayerInput.h"
 #include "Camera/CameraComponent.h"
+#include "MotionControllerComponent.h"
 #include "Components/BoxComponent.h"
 #include "Components/CapsuleComponent.h"
 #include "Engine/World.h"
+#include "XRMotionControllerBase.h"
+#include "IOpenXRExtensionPlugin.h"
+#include "EnhancedInputDeveloperSettings.h"
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FPicoBaseFrameworkSpawnMovementTest, "PicoBaseFramework.SpawnAndHorizontalMovement",
     EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
@@ -72,6 +76,11 @@ bool FPicoBaseFrameworkSpawnMovementTest::RunTest(const FString&)
     const FVector Released = Pawn->GetActorLocation();
     Pawn->Tick(1);
     TestTrue(TEXT("Released input stops movement"), Pawn->GetActorLocation().Equals(Released));
+    TestFalse(TEXT("Desktop mode does not tick motion controllers"), Pawn->LeftController->IsComponentTickEnabled() || Pawn->RightController->IsComponentTickEnabled());
+    Pawn->UpdateViewMode(true);
+    TestTrue(TEXT("Entering VR enables both motion controller ticks"), Pawn->LeftController->IsComponentTickEnabled() && Pawn->RightController->IsComponentTickEnabled());
+    Pawn->UpdateViewMode(false);
+    TestFalse(TEXT("Leaving VR stops motion controller ticks"), Pawn->LeftController->IsComponentTickEnabled() || Pawn->RightController->IsComponentTickEnabled());
     return true;
 }
 
@@ -163,7 +172,7 @@ bool FPicoBaseCollisionTest::RunTest(const FString&)
     APicoBaseStart* Start = World->SpawnActor<APicoBaseStart>();
     APicoBasePawn* Pawn = World->SpawnActor<APicoBasePawn>();
     TestFalse(TEXT("Start collision defaults to off"), Start->bEnableCollision);
-    TestFalse(TEXT("Pawn collision defaults to off"), Pawn->bEnableCollision);
+    TestFalse(TEXT("Pawn collision defaults to off"), Pawn->IsMovementCollisionEnabled());
     AActor* Wall = World->SpawnActor<AActor>();
     UBoxComponent* Box = NewObject<UBoxComponent>(Wall);
     Wall->SetRootComponent(Box);
@@ -177,7 +186,7 @@ bool FPicoBaseCollisionTest::RunTest(const FString&)
     Pawn->SetActorLocation(FVector::ZeroVector);
     Start->bEnableCollision = true;
     Pawn->ConfigureFromStart(Start);
-    TestTrue(TEXT("Start collision setting is copied to the pawn"), Pawn->bEnableCollision);
+    TestTrue(TEXT("Start collision setting is copied to the pawn"), Pawn->IsMovementCollisionEnabled());
     TestTrue(TEXT("Collision capsule is enabled for queries"), Pawn->MovementCapsule->GetCollisionEnabled() == ECollisionEnabled::QueryOnly);
     Pawn->MoveHorizontally(FVector(200, 0, 0));
     TestTrue(TEXT("Enabled collision stops before the wall"), Pawn->GetActorLocation().X > 60 && Pawn->GetActorLocation().X < 65.1);
@@ -186,9 +195,77 @@ bool FPicoBaseCollisionTest::RunTest(const FString&)
     Pawn->SetActorLocation(FVector::ZeroVector);
     Pawn->MoveHorizontally(FVector(200, 200, 0));
     TestTrue(TEXT("Diagonal movement slides along the wall"), Pawn->GetActorLocation().X < 65.1 && Pawn->GetActorLocation().Y > 190);
-    Pawn->bEnableCollision = false;
+    Pawn->SetMovementCollisionEnabled(false);
+    TestTrue(TEXT("Turning collision off takes effect before movement"), Pawn->MovementCapsule->GetCollisionEnabled() == ECollisionEnabled::NoCollision);
+    Pawn->SetMovementCollisionEnabled(true);
+    Pawn->MoveHorizontally(FVector::ZeroVector);
+    TestTrue(TEXT("Turning collision on takes effect while stationary"), Pawn->MovementCapsule->GetCollisionEnabled() == ECollisionEnabled::QueryOnly);
+    Pawn->SetMovementCollisionEnabled(false);
     Pawn->MoveHorizontally(FVector(200, 0, 0));
     TestTrue(TEXT("Collision can be turned off again"), Pawn->GetActorLocation().X > 200);
+    return true;
+}
+namespace
+{
+    class FSessionInputDevice : public FXRMotionControllerBase
+    {
+    public:
+        FName DeviceName;
+        int32 AttachCount = 0;
+        bool bSessionActive = false;
+        bool bAttachedExpectedContext = false;
+        explicit FSessionInputDevice(FName InName) : DeviceName(InName) {}
+        virtual FName GetMotionControllerDeviceTypeName() const override { return DeviceName; }
+        virtual bool GetControllerOrientationAndPosition(int32, FName, FRotator&, FVector&, float) const override { return false; }
+        virtual ETrackingStatus GetControllerTrackingStatus(int32, FName) const override { return ETrackingStatus::NotTracked; }
+        virtual bool AttachInputMappingContexts(const TSet<TObjectPtr<UInputMappingContext>>& Contexts) override
+        {
+            ++AttachCount;
+            bAttachedExpectedContext = !bSessionActive && Contexts.Num() == 1 && Contexts.Contains(PicoBaseInput::GetContext());
+            return !bSessionActive;
+        }
+    };
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FPicoBaseSessionInputTest, "PicoBaseFramework.SessionInputRegistration",
+    EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FPicoBaseSessionInputTest::RunTest(const FString&)
+{
+    IOpenXRExtensionPlugin* Extension = nullptr;
+    for (IOpenXRExtensionPlugin* Candidate : IModularFeatures::Get().GetModularFeatureImplementations<IOpenXRExtensionPlugin>(IOpenXRExtensionPlugin::GetModularFeatureName()))
+    {
+        if (Candidate->GetDisplayName() == TEXT("PicoBaseFramework")) { Extension = Candidate; break; }
+    }
+    if (!TestNotNull(TEXT("PICO session extension is registered"), Extension)) { return false; }
+    FSessionInputDevice OpenXR(TEXT("OpenXR"));
+    FSessionInputDevice Other(TEXT("OtherController"));
+    IModularFeatures::Get().RegisterModularFeature(IMotionController::GetModularFeatureName(), &OpenXR);
+    IModularFeatures::Get().RegisterModularFeature(IMotionController::GetModularFeatureName(), &Other);
+    ON_SCOPE_EXIT
+    {
+        IModularFeatures::Get().UnregisterModularFeature(IMotionController::GetModularFeatureName(), &OpenXR);
+        IModularFeatures::Get().UnregisterModularFeature(IMotionController::GetModularFeatureName(), &Other);
+    };
+    TestEqual(TEXT("Device registration does not attach mappings prematurely"), OpenXR.AttachCount, 0);
+    Extension->OnCreateSession(XR_NULL_HANDLE, XR_NULL_SYSTEM_ID, nullptr);
+    TestEqual(TEXT("First session attaches mappings once"), OpenXR.AttachCount, 1);
+    TestTrue(TEXT("PICO mappings attach before actions become active"), OpenXR.bAttachedExpectedContext);
+    OpenXR.bSessionActive = true;
+    UWorld::InitializationValues IV;
+    IV.AllowAudioPlayback(false).CreatePhysicsScene(false).CreateNavigation(false).CreateAISystem(false).ShouldSimulatePhysics(false);
+    UWorld* World = UWorld::CreateWorld(EWorldType::Game, false, NAME_None, nullptr, true, ERHIFeatureLevel::SM5, &IV);
+    World->DestroyWorld(false);
+    TestEqual(TEXT("Opening a world does not reattach active session mappings"), OpenXR.AttachCount, 1);
+    Extension->OnDestroySession(XR_NULL_HANDLE);
+    OpenXR.bSessionActive = false;
+    Extension->OnCreateSession(XR_NULL_HANDLE, XR_NULL_SYSTEM_ID, nullptr);
+    TestEqual(TEXT("A recreated session reattaches mappings once"), OpenXR.AttachCount, 2);
+    TestTrue(TEXT("Recreated session receives the plugin context"), OpenXR.bAttachedExpectedContext);
+    TestEqual(TEXT("Other input devices are untouched"), Other.AttachCount, 0);
+    const bool bInGlobalDefaults = GetDefault<UEnhancedInputDeveloperSettings>()->DefaultMappingContexts.ContainsByPredicate(
+        [](const FDefaultContextSetting& Entry) { return Entry.InputMappingContext.Get() == PicoBaseInput::GetContext(); });
+    TestFalse(TEXT("Plugin does not mutate global default mapping contexts"), bInGlobalDefaults);
     return true;
 }
 #endif

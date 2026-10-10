@@ -14,6 +14,9 @@
 #include "Engine/Engine.h"
 #include "IXRTrackingSystem.h"
 #include "GameFramework/PlayerController.h"
+#if WITH_EDITOR
+#include "UObject/UnrealType.h"
+#endif
 
 APicoBasePawn::APicoBasePawn()
 {
@@ -34,9 +37,11 @@ APicoBasePawn::APicoBasePawn()
     LeftController = CreateDefaultSubobject<UMotionControllerComponent>(TEXT("LeftController"));
     LeftController->SetupAttachment(TrackingOrigin);
     LeftController->SetTrackingMotionSource(TEXT("Left"));
+    LeftController->PrimaryComponentTick.bStartWithTickEnabled = false;
     RightController = CreateDefaultSubobject<UMotionControllerComponent>(TEXT("RightController"));
     RightController->SetupAttachment(TrackingOrigin);
     RightController->SetTrackingMotionSource(TEXT("Right"));
+    RightController->PrimaryComponentTick.bStartWithTickEnabled = false;
     Notifications = CreateDefaultSubobject<UVRNotificationsComponent>(TEXT("XRNotifications"));
     SpawnCollisionHandlingMethod = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
     SetActorEnableCollision(false);
@@ -50,12 +55,8 @@ void APicoBasePawn::ConfigureFromStart(const APicoBaseStart* Start)
         MoveSpeed = Start->MoveSpeed;
         DesktopEyeHeight = Start->DesktopEyeHeight;
         RightStickDeadZone = Start->RightStickDeadZone;
-        bEnableCollision = Start->bEnableCollision;
-        SetActorTransform(Start->GetFloorSpawnTransform(), false, nullptr, ETeleportType::TeleportPhysics);
+        SetMovementCollisionEnabled(Start->bEnableCollision);
     }
-    AlignmentWorldLocation = GetActorLocation();
-    AlignmentWorldYaw = GetActorRotation().Yaw;
-    UpdateMovementCollision();
     if (HasActorBegunPlay()) { UpdateViewMode(bVRMode); }
 }
 
@@ -63,10 +64,6 @@ void APicoBasePawn::BeginPlay()
 {
     Super::BeginPlay();
     UpdateMovementCollision();
-    AlignmentWorldLocation = GetActorLocation();
-    AlignmentWorldYaw = GetActorRotation().Yaw;
-    LastViewLocation = GetActorLocation();
-    LastViewYaw = GetActorRotation().Yaw;
     Notifications->HMDRecenteredDelegate.AddDynamic(this, &APicoBasePawn::RecenterTracking);
     Notifications->HMDReconnectedDelegate.AddDynamic(this, &APicoBasePawn::RecenterTracking);
     UpdateViewMode(IsVRActive());
@@ -85,6 +82,8 @@ void APicoBasePawn::UpdateViewMode(bool bVR)
     bVRMode = bVR;
     VRCamera->bLockToHmd = bVR;
     VRCamera->bUsePawnControlRotation = !bVR;
+    LeftController->SetComponentTickEnabled(bVR);
+    RightController->SetComponentTickEnabled(bVR);
     VRCamera->SetRelativeLocation(bVR ? FVector::ZeroVector : FVector(0, 0, DesktopEyeHeight));
     TrackingOrigin->SetRelativeTransform(FTransform::Identity);
     bAligned = bOriginRequested = bTriedLocalFloor = bWarnedFloor = false;
@@ -92,6 +91,8 @@ void APicoBasePawn::UpdateViewMode(bool bVR)
     DesktopInput = RightStickInput = FVector2D::ZeroVector;
     AlignmentWorldLocation = GetActorLocation();
     AlignmentWorldYaw = GetActorRotation().Yaw;
+    LastViewLocation = AlignmentWorldLocation;
+    LastViewYaw = AlignmentWorldYaw;
 }
 
 void APicoBasePawn::SetupPlayerInputComponent(UInputComponent* PlayerInputComponent)
@@ -155,7 +156,7 @@ void APicoBasePawn::RecenterTracking()
     RetrySeconds = 0;
 }
 
-void APicoBasePawn::UpdateFloorTracking(float DeltaSeconds)
+void APicoBasePawn::UpdateFloorTracking(float DeltaSeconds, bool bHasValidPosition)
 {
     if (bAligned) { return; }
     RetrySeconds -= DeltaSeconds;
@@ -168,7 +169,8 @@ void APicoBasePawn::UpdateFloorTracking(float DeltaSeconds)
         WarmupFrames = 2;
         return;
     }
-    if (WarmupFrames-- > 0 || !UHeadMountedDisplayFunctionLibrary::HasValidTrackingPosition()) { return; }
+    if (WarmupFrames > 0) { --WarmupFrames; return; }
+    if (!bHasValidPosition) { return; }
     const auto Origin = UHeadMountedDisplayFunctionLibrary::GetTrackingOrigin();
     if (Origin != EHMDTrackingOrigin::Stage && Origin != EHMDTrackingOrigin::LocalFloor)
     {
@@ -202,14 +204,33 @@ void APicoBasePawn::UpdateFloorTracking(float DeltaSeconds)
 
 void APicoBasePawn::UpdateMovementCollision()
 {
+    if (bAppliedCollisionEnabled == bEnableCollision) { return; }
     SetActorEnableCollision(bEnableCollision);
     MovementCapsule->SetCollisionEnabled(bEnableCollision ? ECollisionEnabled::QueryOnly : ECollisionEnabled::NoCollision);
+    bAppliedCollisionEnabled = bEnableCollision;
 }
+
+void APicoBasePawn::SetMovementCollisionEnabled(bool bEnabled)
+{
+    bEnableCollision = bEnabled;
+    UpdateMovementCollision();
+}
+
+#if WITH_EDITOR
+void APicoBasePawn::PostEditChangeProperty(FPropertyChangedEvent& PropertyChangedEvent)
+{
+    Super::PostEditChangeProperty(PropertyChangedEvent);
+    if (PropertyChangedEvent.GetPropertyName() == GET_MEMBER_NAME_CHECKED(APicoBasePawn, bEnableCollision))
+    {
+        UpdateMovementCollision();
+    }
+}
+#endif
 
 void APicoBasePawn::MoveHorizontally(const FVector& Delta)
 {
-    UpdateMovementCollision();
-    if (!bEnableCollision || Delta.IsNearlyZero())
+    if (Delta.IsNearlyZero()) { return; }
+    if (!bEnableCollision)
     {
         AddActorWorldOffset(Delta, false);
         return;
@@ -247,26 +268,31 @@ void APicoBasePawn::Tick(float DeltaSeconds)
     Super::Tick(DeltaSeconds);
     const bool bVR = IsVRActive();
     if (bVR != bVRMode) { UpdateViewMode(bVR); }
-    if (bVRMode) { UpdateFloorTracking(DeltaSeconds); }
     FVector2D MovementInput = DesktopInput;
     if (bVRMode)
     {
         MovementInput = FVector2D::ZeroVector;
-        if (bAligned && UHeadMountedDisplayFunctionLibrary::HasValidTrackingPosition())
+        const float DeadZone = FMath::Clamp(RightStickDeadZone, 0.0f, 0.95f);
+        const float MagnitudeSquared = RightStickInput.SizeSquared();
+        const bool bHasStickMovement = MagnitudeSquared > FMath::Square(DeadZone);
+        const bool bNeedsTrackingPosition = (!bAligned && bOriginRequested && WarmupFrames == 0) || (bAligned && bHasStickMovement);
+        const bool bHasValidPosition = bNeedsTrackingPosition && UHeadMountedDisplayFunctionLibrary::HasValidTrackingPosition();
+        UpdateFloorTracking(DeltaSeconds, bHasValidPosition);
+        if (bAligned && bHasStickMovement && bHasValidPosition)
         {
-            const float Magnitude = RightStickInput.Size();
-            const float DeadZone = FMath::Clamp(RightStickDeadZone, 0.0f, 0.95f);
-            if (Magnitude > DeadZone)
-            {
-                MovementInput = RightStickInput / Magnitude *
-                    FMath::Clamp((Magnitude - DeadZone) / (1.0f - DeadZone), 0.0f, 1.0f);
-            }
+            const float Magnitude = FMath::Sqrt(MagnitudeSquared);
+            MovementInput = RightStickInput / Magnitude *
+                FMath::Clamp((Magnitude - DeadZone) / (1.0f - DeadZone), 0.0f, 1.0f);
         }
+        const FTransform ViewTransform = VRCamera->GetComponentTransform();
+        LastViewLocation = ViewTransform.GetLocation();
+        LastViewYaw = ViewTransform.Rotator().Yaw;
     }
-    const float Yaw = bVRMode ? VRCamera->GetComponentRotation().Yaw : GetControlRotation().Yaw;
+    if (MovementInput.IsNearlyZero() || MoveSpeed <= 0 || DeltaSeconds <= 0) { return; }
+    const float Yaw = bVRMode ? LastViewYaw : GetControlRotation().Yaw;
     const FVector LocalMovement(MovementInput.Y, MovementInput.X, 0);
     const FVector WorldMovement = FRotator(0, Yaw, 0).RotateVector(LocalMovement.GetClampedToMaxSize(1));
-    MoveHorizontally(WorldMovement * FMath::Max(0.0f, MoveSpeed) * DeltaSeconds);
-    LastViewLocation = VRCamera->GetComponentLocation();
-    LastViewYaw = VRCamera->GetComponentRotation().Yaw;
+    const FVector PreviousLocation = GetActorLocation();
+    MoveHorizontally(WorldMovement * MoveSpeed * DeltaSeconds);
+    if (bVRMode) { LastViewLocation += GetActorLocation() - PreviousLocation; }
 }

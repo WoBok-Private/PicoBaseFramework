@@ -6,9 +6,10 @@
     "Description": "Reusable PICO VR player framework with floor-based spawning, head and controller tracking, desktop mouse look and right-stick movement.",
     "Category": "Virtual Reality",
     "CanContainContent": false,
-    "Modules": [{ "Name": "PicoBaseFramework", "Type": "Runtime", "LoadingPhase": "Default" }],
+    "Modules": [{ "Name": "PicoBaseFramework", "Type": "Runtime", "LoadingPhase": "PostConfigInit" }],
     "Plugins": [
         { "Name": "XRBase", "Enabled": true },
-        { "Name": "EnhancedInput", "Enabled": true }
+        { "Name": "EnhancedInput", "Enabled": true },
+        { "Name": "OpenXR", "Enabled": true }
     ]
 }
