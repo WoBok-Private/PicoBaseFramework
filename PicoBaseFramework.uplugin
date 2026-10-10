@@ -1,0 +1,14 @@
+{
+    "FileVersion": 3,
+    "Version": 1,
+    "VersionName": "1.0.0",
+    "FriendlyName": "Pico Base Framework",
+    "Description": "Reusable PICO VR player framework with floor-based spawning, head and controller tracking, desktop mouse look and right-stick movement.",
+    "Category": "Virtual Reality",
+    "CanContainContent": false,
+    "Modules": [{ "Name": "PicoBaseFramework", "Type": "Runtime", "LoadingPhase": "Default" }],
+    "Plugins": [
+        { "Name": "XRBase", "Enabled": true },
+        { "Name": "EnhancedInput", "Enabled": true }
+    ]
+}
